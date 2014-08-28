@@ -81,6 +81,7 @@ def loadcextensionfromstring(fullname, string, pathname, description):
             #print file, pathname, description
             mod = imp.load_module(fullname, f2, pathname, description)
             #print mod
+            posix.unlink(name)
         return mod 
 #    except Exception as e:
 #        print 'exception', e
@@ -98,7 +99,7 @@ def cleanup():
     _tmpfiles = []
     oldexitfunc()
 
-sys.exitfunc = cleanup
+#sys.exitfunc = cleanup
 
 class Loader(object):
     def __init__(self, file, pathname, description):
@@ -164,4 +165,8 @@ def install(comm=COMM_WORLD, tmpdir='/tmp'):
     global _tmpdir
     _tmpdir = tmpdir
     sys.meta_path.append(Finder(comm))
-    import site
+    try:
+        # workaround bw-python site.py issue (del __boot not found)
+        import site
+    except NameError:
+        pass
