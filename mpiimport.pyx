@@ -34,7 +34,7 @@ import imp
 import sys
 import posix
 
-__all__ = ['install']
+__all__ = ['install', 'tio']
 
 _tmpdir = '/tmp'
 _tmpfiles = []
@@ -45,8 +45,30 @@ d = {
         imp.C_BUILTIN: "builtin",
         imp.C_EXTENSION: "extension",
         imp.PY_FROZEN: "frozen"}
-verbose = posix.environ.get('PYTHON_MPIIMPORT_VERBOSE', 0)
- 
+cdef class Profiler:
+    cdef readonly double time
+    cdef readonly object title
+    cdef double now
+    cdef int count
+    def __init__(self, name):
+        self.title = name
+        self.time = 0
+        self.count = 0
+    def start(self):
+        self.now = MPI_Wtime()
+    def end(self):
+        self.time += MPI_Wtime() - self.now
+        self.count = self.count + 1
+    def __str__(self):
+        return '%s: %g (%d)' % (self.title, self.time, self.count)
+
+tio = Profiler('IO')
+tload = Profiler('LOAD')
+tloadlocal = Profiler('LOADDirect')
+tfind = Profiler('FIND')
+tcomm = Profiler('COMM')
+tloadfile = Profiler('LOADFile')
+
 def tempnam(dir, prefix, suffix):
     l = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
     s = posix.urandom(16)
@@ -69,24 +91,32 @@ def mkstemp(dir='', suffix='', prefix='', mode='w+', fmode=0600):
 
 def loadcextensionfromstring(fullname, string, pathname, description):
 #    try:
+        tio.start()
         with mkstemp(dir=_tmpdir, prefix=fullname.split('.')[-1] + '-', suffix=description[0]) as file:
             file.write(string)
             _tmpfiles.append(file.name)
             name = file.name
+        tio.end()
 
-        if verbose:
+        if _verbose:
             print 'module', fullname, 'using', name, 'via mpi'
 
         #with open(name, mode=description[1]) as f2:
+        tio.start()
         f2 = open(name, mode=description[1])
+        tio.end()
         #print file, pathname, description
+        tload.start()
         mod = imp.load_module(fullname, f2, pathname, description)
+        tload.end()
         if description[-1] == imp.C_EXTENSION:
             mod.filehandle = f2
         else:
             f2.close()
         #print mod
+        tio.start()
         posix.unlink(name)
+        tio.end()
         return mod 
 #    except Exception as e:
 #        print 'exception', e
@@ -114,24 +144,29 @@ class Loader(object):
         self.pathname = pathname
         self.description = description
     def load_module(self, fullname):
-        mod = sys.modules.setdefault(fullname, imp.new_module(fullname))
         if self.file:
             if self.description[-1] == imp.PY_SOURCE:
                 #mod.__file__ = "<%s>" % self.__class__.__name__
                 #mod.__package__ = fullname.rpartition('.')[0]
                 #print type(bytes(self.file)), fullname
                 #exec self.file in mod.__dict__
-                loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
+                mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
             elif self.description[-1] == imp.C_EXTENSION:
                 #print "loading extension"
-                loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
+                mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
             else:
-                if verbose:
+                if _verbose:
                     print 'module', fullname, 'using', self.file
+                tio.start()
                 self.file = open(self.file, self.description[1])
+                tio.end()
+                tloadfile.start()
                 mod = imp.load_module(fullname, self.file, self.pathname, self.description)
+                tloadfile.end()
         else:
+            tloadlocal.start()
             mod = imp.load_module(fullname, self.file, self.pathname, self.description)
+            tloadlocal.end()
         mod.__loader__ = self
         return mod
 
@@ -141,6 +176,7 @@ class Finder(object):
         self.rank = comm.rank
     def find_module(self, fullname, path=None):
         file, pathname, description = None, None, None
+        tfind.start()
         if self.rank == 0:
             try:
                 file, pathname, description = imp.find_module(fullname, path)
@@ -162,14 +198,20 @@ class Finder(object):
             except ImportError as e:
                 file = e
                 pass
+        tfind.end()
+        tcomm.start()
         file, pathname, description = self.comm.bcast((file, pathname, description))
+        tcomm.end()
 
         if isinstance(file, Exception):
             return None
         return Loader(file, pathname, description)
 
-def install(comm=COMM_WORLD, tmpdir='/tmp'):
+def install(comm=COMM_WORLD, tmpdir='/tmp', verbose=False):
     global _tmpdir
+    global _verbose
+    _verbose = verbose or posix.environ.get('PYTHON_MPIIMPORT_VERBOSE', 0)
+
     _tmpdir = tmpdir
     sys.meta_path.append(Finder(comm))
     try:

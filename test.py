@@ -1,5 +1,13 @@
-import mpiimport; mpiimport.install()
+import mpiimport; mpiimport.install(tmpdir='/dev/shm', verbose=True)
 from mpi4py import MPI
 #import numpy
 #numpy.test()
-import die
+#import die
+if MPI.COMM_WORLD.rank == 0:
+    print mpiimport.tio
+    print mpiimport.tload
+    print mpiimport.tloadlocal
+    print mpiimport.tloadfile
+    print mpiimport.tcomm
+    print mpiimport.tfind
+
