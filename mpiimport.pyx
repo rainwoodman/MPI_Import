@@ -81,7 +81,7 @@ def loadcextensionfromstring(fullname, string, pathname, description):
         f2 = open(name, mode=description[1])
         #print file, pathname, description
         mod = imp.load_module(fullname, f2, pathname, description)
-        if description[-1] = imp.C_EXTENSION:
+        if description[-1] == imp.C_EXTENSION:
             mod.filehandle = f2
         else:
             f2.close()
@@ -97,6 +97,8 @@ else:
     oldexitfunc = lambda : None
 
 def cleanup():
+    MPI_Finalize()
+    return
     global _tmpfiles
     for f in _tmpfiles:
     #    print 'removing', f
@@ -104,7 +106,7 @@ def cleanup():
     _tmpfiles = []
     oldexitfunc()
 
-#sys.exitfunc = cleanup
+sys.exitfunc = cleanup
 
 class Loader(object):
     def __init__(self, file, pathname, description):
