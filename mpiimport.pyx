@@ -146,11 +146,12 @@ class Loader(object):
     def load_module(self, fullname):
         if self.file:
             if self.description[-1] == imp.PY_SOURCE:
-                #mod.__file__ = "<%s>" % self.__class__.__name__
-                #mod.__package__ = fullname.rpartition('.')[0]
+                mod = sys.modules.setdefault(fullname,imp.new_module(fullname))
+                mod.__file__ = "<%s>" % self.__class__.__name__
+                mod.__package__ = fullname.rpartition('.')[0]
                 #print type(bytes(self.file)), fullname
-                #exec self.file in mod.__dict__
-                mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
+                exec self.file in mod.__dict__
+#                mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
             elif self.description[-1] == imp.C_EXTENSION:
                 #print "loading extension"
                 mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
