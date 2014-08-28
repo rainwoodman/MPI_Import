@@ -77,11 +77,16 @@ def loadcextensionfromstring(fullname, string, pathname, description):
         if verbose:
             print 'module', fullname, 'using', name, 'via mpi'
 
-        with open(name, mode=description[1]) as f2:
-            #print file, pathname, description
-            mod = imp.load_module(fullname, f2, pathname, description)
-            #print mod
-            posix.unlink(name)
+        #with open(name, mode=description[1]) as f2:
+        f2 = open(name, mode=description[1])
+        #print file, pathname, description
+        mod = imp.load_module(fullname, f2, pathname, description)
+        if description[-1] = imp.C_EXTENSION:
+            mod.filehandle = f2
+        else:
+            f2.close()
+        #print mod
+        posix.unlink(name)
         return mod 
 #    except Exception as e:
 #        print 'exception', e
