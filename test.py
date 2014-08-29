@@ -1,4 +1,4 @@
-import mpiimport; mpiimport.install(tmpdir='/dev/shm', verbose=True)
+import mpiimport; mpiimport.install(tmpdir='/tmp', verbose=False)
 from mpi4py import MPI
 #import numpy
 #numpy.test()
@@ -10,4 +10,6 @@ if MPI.COMM_WORLD.rank == 0:
     print mpiimport.tloadfile
     print mpiimport.tcomm
     print mpiimport.tfind
+    mpiimport.tall.end()
+    print mpiimport.tall
 

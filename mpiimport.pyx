@@ -68,6 +68,7 @@ tloadlocal = Profiler('LOADDirect')
 tfind = Profiler('FIND')
 tcomm = Profiler('COMM')
 tloadfile = Profiler('LOADFile')
+tall = Profiler('ALL')
 
 def tempnam(dir, prefix, suffix):
     l = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
@@ -144,7 +145,7 @@ class Loader(object):
         self.pathname = pathname
         self.description = description
     def load_module(self, fullname):
-        if self.file:
+        if not _disable and self.file:
             if self.description[-1] == imp.PY_SOURCE:
                 mod = sys.modules.setdefault(fullname,imp.new_module(fullname))
                 mod.__file__ = "<%s>" % self.__class__.__name__
@@ -177,42 +178,51 @@ class Finder(object):
         self.rank = comm.rank
     def find_module(self, fullname, path=None):
         file, pathname, description = None, None, None
-        tfind.start()
-        if self.rank == 0:
-            try:
-                file, pathname, description = imp.find_module(fullname, path)
-                if file:
-                    if description[-1] == imp.PY_SOURCE:
-                        #print 'finding python module', file.name
-                        s = file.read()
-                        file.close()
-                        file = s
-                    elif description[-1] == imp.C_EXTENSION:
-                        #print 'finding extension', file.name
-                        s = file.read()
-                        file.close()
-                        file = s
-                    else:
-                        #print 'finding file by name', d[description[-1]]
-                        file = file.name
-                    
-            except ImportError as e:
-                file = e
-                pass
-        tfind.end()
-        tcomm.start()
-        file, pathname, description = self.comm.bcast((file, pathname, description))
-        tcomm.end()
+        if _disable:
+            tfind.start()
+            file, pathname, description = imp.find_module(fullname, path)
+            tfind.end()
+        else:
+            if self.rank == 0:
+                try:
+                    tfind.start()
+                    file, pathname, description = imp.find_module(fullname, path)
+                    tfind.end()
+                    tio.start()
+                    if file:
+                        if description[-1] == imp.PY_SOURCE:
+                            #print 'finding python module', file.name
+                            s = file.read()
+                            file.close()
+                            file = s
+                        elif description[-1] == imp.C_EXTENSION:
+                            #print 'finding extension', file.name
+                            s = file.read()
+                            file.close()
+                            file = s
+                        else:
+                            #print 'finding file by name', d[description[-1]]
+                            file = file.name
+                        
+                    tio.end()
+                except ImportError as e:
+                    file = e
+                    pass
+            tcomm.start()
+            file, pathname, description = self.comm.bcast((file, pathname, description))
+            tcomm.end()
 
         if isinstance(file, Exception):
             return None
         return Loader(file, pathname, description)
 
-def install(comm=COMM_WORLD, tmpdir='/tmp', verbose=False):
+def install(comm=COMM_WORLD, tmpdir='/tmp', verbose=False, disable=False):
+    tall.start()
     global _tmpdir
     global _verbose
+    global _disable
     _verbose = verbose or posix.environ.get('PYTHON_MPIIMPORT_VERBOSE', 0)
-
+    _disable = disable
     _tmpdir = tmpdir
     sys.meta_path.append(Finder(comm))
     try:
