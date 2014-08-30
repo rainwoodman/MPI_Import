@@ -240,14 +240,16 @@ def install(comm=COMM_WORLD, tmpdir='/tmp', verbose=False, disable=False):
     _disable = disable
     _tmpdir = tmpdir
     sys.meta_path.append(Finder(comm))
-    import site
-    site.main0()
 
-    import sysconfig
-    import _sysconfigdata
-    import re
+    if sys.flags.no_site:
+        import site
+        site.main0()
 
-    if comm.rank == 0:
-        site.main1()
-    sys.path = comm.bcast(sys.path)
-    site.main2()
+        import sysconfig
+        import _sysconfigdata
+        import re
+
+        if comm.rank == 0:
+            site.main1()
+        sys.path = comm.bcast(sys.path)
+        site.main2()
