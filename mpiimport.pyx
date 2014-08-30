@@ -1,20 +1,26 @@
 include "libmpi.pxd"
 import cPickle
 
+bytescomm = 0
+
 cdef class Comm(object):
     cdef MPI_Comm comm
     cdef readonly int rank
     cdef readonly int size
 
+    def barrier(self):
+        MPI_Barrier(self.comm)
+
     def bcast(self, obj, root=0):
+        global bytescomm
         cdef int n
         cdef bytes buf
 
         if self.rank == root:
-            buf = cPickle.dumps(obj)
+            buf = cPickle.dumps(obj, 2)
             n = len(buf)
         MPI_Bcast(&n, 1, MPI_INT, root, self.comm)
-
+        bytescomm = bytescomm + n
         if self.rank != root:
             buf = bytes(' ' * n)
 
@@ -34,7 +40,7 @@ import imp
 import sys
 import posix
 
-__all__ = ['install', 'tio']
+__all__ = ['install', 'COMM_WORLD']
 
 _tmpdir = '/tmp'
 _tmpfiles = []
@@ -150,8 +156,10 @@ class Loader(object):
                 mod = sys.modules.setdefault(fullname,imp.new_module(fullname))
                 mod.__file__ = "<%s>" % self.__class__.__name__
                 mod.__package__ = fullname.rpartition('.')[0]
-                #print type(bytes(self.file)), fullname
-                exec self.file in mod.__dict__
+                if _verbose:
+                    print 'module', fullname, 'using string'
+                code = compile(self.file, self.pathname, 'exec', 0, 1)
+                exec code in mod.__dict__
 #                mod = loadcextensionfromstring(fullname, self.file, self.pathname, self.description) 
             elif self.description[-1] == imp.C_EXTENSION:
                 #print "loading extension"
@@ -180,14 +188,25 @@ class Finder(object):
         file, pathname, description = None, None, None
         if _disable:
             tfind.start()
-            file, pathname, description = imp.find_module(fullname, path)
+            try:
+                file, pathname, description = imp.find_module(fullname, path)
+            except ImportError as e:
+                file = e
+                pass
             tfind.end()
+            if self.rank == 0:
+                #print fullname, file, pathname, 'disable'
+                pass
         else:
             if self.rank == 0:
+                tfind.start()
                 try:
-                    tfind.start()
                     file, pathname, description = imp.find_module(fullname, path)
-                    tfind.end()
+                except ImportError as e:
+                    file = e
+                tfind.end()
+                #print fullname, file, pathname
+                if not isinstance(file, Exception):
                     tio.start()
                     if file:
                         if description[-1] == imp.PY_SOURCE:
@@ -203,11 +222,7 @@ class Finder(object):
                         else:
                             #print 'finding file by name', d[description[-1]]
                             file = file.name
-                        
                     tio.end()
-                except ImportError as e:
-                    file = e
-                    pass
             tcomm.start()
             file, pathname, description = self.comm.bcast((file, pathname, description))
             tcomm.end()
@@ -221,12 +236,18 @@ def install(comm=COMM_WORLD, tmpdir='/tmp', verbose=False, disable=False):
     global _tmpdir
     global _verbose
     global _disable
-    _verbose = verbose or posix.environ.get('PYTHON_MPIIMPORT_VERBOSE', 0)
+    _verbose = verbose or int(posix.environ.get('PYTHON_MPIIMPORT_VERBOSE', 0)) == 1
     _disable = disable
     _tmpdir = tmpdir
     sys.meta_path.append(Finder(comm))
-    try:
-        # workaround bw-python site.py issue (del __boot not found)
-        import site
-    except NameError:
-        pass
+    import site
+    site.main0()
+
+    import sysconfig
+    import _sysconfigdata
+    import re
+
+    if comm.rank == 0:
+        site.main1()
+    sys.path = comm.bcast(sys.path)
+    site.main2()
