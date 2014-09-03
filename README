@@ -1,7 +1,23 @@
-This repository contains two different approaches to the Python import
-bottleneck:
+MPI_Import
+===========
+
+A collection of experimental modules the Python import
+bottleneck on Cray and similiar super-computers:
+
+We currently have three approaches, MPI_Import.py, cached_import.py
+and mpiimport.pyx. 
+
+The first two, developed in 2011 by Asher Langton, focused on reducing the
+number of meta requests to the IO subsystem; 
+The latest addition is mpiimport.pyx in 2014 by Yu Feng. It focuses on reducing
+the overall IO burden to the subsystem.
+
+Supercomputers are unique; one may work better than another depending on
+the architecture of the computer and also depending on the scale of the jobs.
 
 1) MPI_Import.py
+---------------
+
 MPI_Import.py is a replacement for the standard import mechanism. It
 can only be used in sections of the code that are synchronous, as
 every process depends on rank 0 to handle the the lookup portion of a
@@ -13,6 +29,8 @@ http://mail.scipy.org/pipermail/numpy-discussion/2012-January/059801.html
 
 
 2) cached_import.py
+----------------
+
 cached_import.py is an attempt to improve on the performance and
 useability of MPI_Import through the use of PEP 302 finders and
 loaders. See the PyData panel discussion (starting aroung 1:07:00) and
@@ -33,3 +51,39 @@ stat on every potential module file, and maintains a dictionary of the
 contents of sys.path, as well as the contents of package
 subdirectories as they're visited, and then uses the standard Python
 probing import method. This appears to be the best approach so far.
+
+3) mpiimport.pyx
+----------------
+mpiimport.pyx is a parallel replacement to the python import mechanism. 
+
+The approach avoids IO on the shared file system as much as possible. This
+results more predictable performance on shared large distributed computers, as
+the amount of IO operations is drastically reduced.
+
+It replaces the import command with a meta-path hook that performs a parallel
+import. It comes with a minimalistic MPI binding (based on libmpi.pxd from
+mpi4py) to avoid pulling in the dependency of mpi4py before the parallel import
+is initialized.
+
+The .py files and .so files are read on the 0-th rank of MPI_COMM_WORLD, then
+broadcast to the computing nodes:  
+  a) .py files: the computing nodes 'exec' them right-away; 
+  b) .so files: the computing nodes dump them to the fast memory based tmp file
+system, then load the .so files.
+
+In addition, the expensive site.py is replaced with a three stage
+initialization, where the examination of .pth files are also limited on 0-th
+rank.
+
+To use the module, compile with 
+   make
+
+Then copy mpiimport.so and site.py to the python script directory. 
+Add the following lines to the head of the script:
+
+   import mpiimport; mpiimport.install()
+
+modify the scripts invoking the python script, replacing 'python' with 'python
+-S'.
+
+(see test.py as an example)
