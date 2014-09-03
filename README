@@ -86,4 +86,46 @@ Add the following lines to the head of the script:
 modify the scripts invoking the python script, replacing 'python' with 'python
 -S'.
 
-(see test.py as an example)
+Tests on BlueWaters (test.py uses mpiimport; test0.py doesn't use import hooks;
+importing numpy and mpi4py, then quit)
+
+Highlights: 
+
+   1) 3 mins of start-up time for a 16K core job
+   2) 50% walltime reduction for start-up 
+   3) 95% reduction of IO on shared file system 
+      [ with mpiimport: 
+         lustre io ~= inblocks - outblocks.
+         an equal amount of blocks are written / read to /tmp.
+        without mpiimport:
+         lustre io ~= inblocks
+      ]
+   4) about 60 seconds for pure python and mpiimport startup.
+
++ aprun -n 16384 python -S test.py
+python ready to go at 2014-09-03 13:46:55.856611
+IO: 0.117565 (97)
+LOAD: 5.87299 (14)
+LOADDirect: 30.3157 (9)
+LOADFile: 0 (0)
+COMM: 68.6621 (173)
+FIND: 31.3206 (173)
+ALL: 122.83 (1)
+2723405
+Application 5648763 resources: utime ~806734s, stime ~36413s, Rss ~54492,
+inblocks ~84057878, outblocks ~72271061
+
+real    3m18.867s
+user    0m0.056s
+sys     0m0.156s
++ date +%H:%M:%S.%N
+13:47:07.387158124
++ aprun -n 16384 python test0.py
+python ready to go at 2014-09-03 13:54:13.405897
+Application 5648777 resources: utime ~48268s, stime ~70637s, Rss ~48136,
+inblocks ~309473401, outblocks ~15009
+
+real    7m17.607s
+user    0m0.068s
+sys     0m0.120s
+
