@@ -204,9 +204,7 @@ class mpi_import(object):
 # Replacement for __import__(). Taken from knee.py; unmodified except for the
 # (unused) level parameter.
 def __import_hook__(name, globals=None, locals=None, fromlist=None, level=-1):
-    # TODO: handle level parameter correctly. For now, we'll ignore
-    # it and try both absolute and relative imports.
-    parent = __determine_parent__(globals)
+    parent = __determine_parent__(globals, level)
     q, tail = __find_head_package__(parent, name)
     m = __load_tail__(q, tail)
     if not fromlist:
@@ -258,7 +256,7 @@ def __import_module__(partname, fqname, parent):
         setattr(parent, partname, m)
     return m
 
-def __determine_parent__(globals):
+def __determine_parent__(globals, level):
     if not globals or not globals.has_key("__name__"):
         return None
     pname = globals['__name__']
@@ -267,7 +265,13 @@ def __determine_parent__(globals):
         assert globals is parent.__dict__
         return parent
     if '.' in pname:
-        i = pname.rfind('.')
+        if level > 0:
+            end = len(pname)
+            for l in range(level):
+                i = pname.rfind('.', 0, end)
+                end = i
+        else:
+            i = pname.rfind('.')
         pname = pname[:i]
         # One consequence of not handling import levels correctly is that
         # we can end up with a name like "parent." here. As a workaround,
